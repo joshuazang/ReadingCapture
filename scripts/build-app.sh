@@ -1,11 +1,13 @@
 #!/bin/bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-swift build -c release --arch arm64 --arch x86_64
-task_bin_path="$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)"
+swift build -c release --arch arm64
+task_arm_bin="$(swift build -c release --arch arm64 --show-bin-path)/ReadingCapture"
+swift build -c release --arch x86_64
+task_intel_bin="$(swift build -c release --arch x86_64 --show-bin-path)/ReadingCapture"
 task_app_path="$PWD/dist/Reading Capture.app"
 mkdir -p "$task_app_path/Contents/MacOS"
-cp "$task_bin_path/ReadingCapture" "$task_app_path/Contents/MacOS/ReadingCapture"
+lipo -create "$task_arm_bin" "$task_intel_bin" -output "$task_app_path/Contents/MacOS/ReadingCapture"
 cat > "$task_app_path/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -22,7 +24,7 @@ cat > "$task_app_path/Contents/Info.plist" <<'PLIST'
 </dict></plist>
 PLIST
 codesign --force --sign - --identifier com.joshuazang.reading-capture "$task_app_path"
-lipo -verify_arch arm64 x86_64 "$task_app_path/Contents/MacOS/ReadingCapture"
+lipo "$task_app_path/Contents/MacOS/ReadingCapture" -verify_arch arm64 x86_64
 ditto -c -k --sequesterRsrc --keepParent "$task_app_path" "$PWD/dist/ReadingCapture-macOS.zip"
 task_image_stage="$(mktemp -d)"
 trap 'rm -rf "$task_image_stage"' EXIT

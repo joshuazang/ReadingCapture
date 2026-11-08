@@ -18,7 +18,7 @@ mkdir "$task_verify_dir/mount"
 hdiutil attach -readonly -nobrowse -mountpoint "$task_verify_dir/mount" dist/ReadingCapture-macOS.dmg
 task_mounted=1
 codesign --verify --deep --strict --all-architectures "$task_verify_dir/mount/Reading Capture.app"
-lipo -verify_arch arm64 x86_64 "$task_verify_dir/mount/Reading Capture.app/Contents/MacOS/ReadingCapture"
+lipo "$task_verify_dir/mount/Reading Capture.app/Contents/MacOS/ReadingCapture" -verify_arch arm64 x86_64
 cmp "dist/Reading Capture.app/Contents/MacOS/ReadingCapture" "$task_verify_dir/mount/Reading Capture.app/Contents/MacOS/ReadingCapture"
 [[ "$(readlink "$task_verify_dir/mount/Applications")" == /Applications ]]
 echo "Verified ZIP extraction, DMG mounting, both CPU architectures, signatures and exact packaged executable bytes."

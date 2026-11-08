@@ -23,9 +23,9 @@ jobs:
       - name: Test actual export with both editors' shared importer
         run: node scripts/check-interchange.cjs "$RUNNER_TEMP/capture-export.txt"
       - name: Build standalone app
-        run: bash scripts/build-app.sh
+        run: bash scripts/ci-command.sh bash -x scripts/build-app.sh
       - name: Verify Mac ZIP and disk image
-        run: bash scripts/verify-package.sh
+        run: bash scripts/ci-command.sh bash -x scripts/verify-package.sh
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: ReadingCapture-macOS
