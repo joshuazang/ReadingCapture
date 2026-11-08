@@ -189,6 +189,7 @@ struct LibraryView: View {
     @objc func openLibrary() {
         if window == nil {
             let created = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 650), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+            created.contentMinSize = NSSize(width: 760, height: 500)
             created.title = "Reading Capture"; created.isReleasedWhenClosed = false; created.delegate = self
             created.contentView = NSHostingView(rootView: LibraryView(model: model)); created.center(); window = created
         }
