@@ -24,7 +24,37 @@ jobs:
         run: node scripts/check-interchange.cjs "$RUNNER_TEMP/capture-export.txt"
       - name: Build standalone app
         run: bash scripts/build-app.sh
+      - name: Verify Mac ZIP and disk image
+        run: bash scripts/verify-package.sh
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: ReadingCapture-macOS
-          path: dist/ReadingCapture-macOS.zip
+          path: |
+            dist/ReadingCapture-macOS.zip
+            dist/ReadingCapture-macOS.dmg
+            dist/SHA256SUMS.txt
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: native-app
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ReadingCapture-macOS
+          path: dist
+      - name: Publish verified development downloads
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > "$RUNNER_TEMP/release-notes.md" <<'NOTES'
+          Download ReadingCapture-macOS.dmg, open it, and drag Reading Capture into Applications.
+
+          Requires macOS 13 or newer. Includes Apple Silicon and Intel executables. These direct release assets avoid GitHub Actions' nested ZIP download.
+
+          Native Keychain/encryption and export compatibility tests passed. Both packages were verified on macOS: ZIP extraction, DMG mounting, code signatures, CPU architectures and executable byte comparisons. SHA256SUMS.txt provides download integrity checks.
+
+          This is an ad-hoc signed development prototype, not Developer ID signed or notarized. macOS may request an explicit per-app approval. Real Skim/calibre interactions and UI flows still need device verification. Do not disable Gatekeeper globally.
+          NOTES
+          gh release create "$GITHUB_REF_NAME" dist/ReadingCapture-macOS.dmg dist/ReadingCapture-macOS.zip dist/SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME — Development build" --prerelease --notes-file "$RUNNER_TEMP/release-notes.md"

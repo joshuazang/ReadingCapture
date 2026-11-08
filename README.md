@@ -9,6 +9,12 @@ editor. Its only connection to IM/Mosaic is the export/import file format.
 
 ## Use
 
+Download the disk image from [Releases](https://github.com/joshuazang/ReadingCapture/releases).
+Open `ReadingCapture-macOS.dmg`, then drag **Reading Capture** into **Applications**.
+The disk image and direct ZIP include both Apple Silicon and Intel executables;
+the release assets avoid the nested ZIP produced by Actions artifact downloads.
+Both packages are extracted/mounted and signature-checked on a Mac before release.
+
 Build with Xcode command-line tools: `bash scripts/build-app.sh`. Open
 `dist/Reading Capture.app`. This is an ad-hoc signed development build, not a
 Developer ID signed/notarized distribution. Build locally from reviewed source;
