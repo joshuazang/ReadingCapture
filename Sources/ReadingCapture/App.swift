@@ -89,7 +89,7 @@ import UniformTypeIdentifiers
             var clip = try Clipping.make(quote: annotation.text, book: annotation.book, app: app, bundle: bundle)
             clip.annotationKey = annotation.key; pending = clip; pendingNotify = notify; retry()
             return annotationKeys.contains(annotation.key)
-        } catch { pause(); error = error.localizedDescription; return false }
+        } catch { pause(); self.error = error.localizedDescription; return false }
     }
     func chooseCalibreFolder() {
         let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false

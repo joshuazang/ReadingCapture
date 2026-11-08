@@ -4,7 +4,7 @@ import AppKit
 @testable import ReadingCapture
 
 final class NativeHighlightsTests: XCTestCase {
-    func testCalibreBooksAndHighlightsAreAttributedWithoutClipboard() throws {
+    func testCalibreBooksAndHighlightsAreAttributedWithoutClipboard() async throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: folder) }
         try FileManager.default.createDirectory(at: folder.appendingPathComponent("viewer/annots"), withIntermediateDirectories: true)
@@ -15,13 +15,14 @@ final class NativeHighlightsTests: XCTestCase {
             let rows: [[String: Any]] = [["type":"highlight","uuid":"same-id","highlighted_text":"  Exact quote\r\n🙂", "timestamp":"2026-11-08T10:00:00.123456+00:00"], ["type":"highlight","uuid":"deleted","highlighted_text":"Do not import", "removed":true], ["type":"bookmark","uuid":"bookmark","highlighted_text":"Not a highlight"]]
             try JSONSerialization.data(withJSONObject: rows).write(to: folder.appendingPathComponent("viewer/annots/" + hash + ".json"))
         }
-        let probe = ReaderProbe(), result = try probe.calibre(folder: folder, known: [])
+        let probe = ReaderProbe(), result = try await probe.calibre(folder: folder, known: [])
         XCTAssertEqual(Set(result.1.map(\.book)), ["First Book", "Second Book"])
         XCTAssertEqual(result.1.count, 2); XCTAssertNotEqual(result.1[0].key, result.1[1].key)
         XCTAssertTrue(result.1.allSatisfy { $0.text == "  Exact quote\r\n🙂" && $0.modified != nil && $0.historicalAtConnection })
-        XCTAssertTrue(try probe.calibre(folder: folder, known: Set(result.1.map(\.key))).1.isEmpty)
+        let repeated = try await probe.calibre(folder: folder, known: Set(result.1.map(\.key))); XCTAssertTrue(repeated.1.isEmpty)
         let bad = folder.appendingPathComponent("viewer-webengine.json")
-        try Data("{".utf8).write(to: bad); XCTAssertThrowsError(try probe.calibre(folder: folder, known: []))
+        try Data("{".utf8).write(to: bad)
+        do { _ = try await probe.calibre(folder: folder, known: []); XCTFail("Partial JSON must be rejected") } catch {}
     }
     @MainActor func testSkimScriptsCompileAgainstInstalledReader() async throws {
         guard FileManager.default.fileExists(atPath: "/Applications/Skim.app") else { throw XCTSkip("Skim dictionary is not installed on this machine") }

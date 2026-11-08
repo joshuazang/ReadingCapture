@@ -1,7 +1,7 @@
 import AppKit
 import CryptoKit
 
-struct ReaderHighlight: Equatable {
+struct ReaderHighlight: Equatable, Sendable {
     let key: String
     let text: String
     let book: String
@@ -12,12 +12,17 @@ struct ReaderHighlight: Equatable {
     }
 }
 
-/// One serial worker owns this probe. It never writes a reader's files.
-final class ReaderProbe {
+/// Actor-isolated reader state. This never writes a reader's files.
+actor ReaderProbe {
     private struct CachedFile { let date: Date?; let size: Int; let rows: [[String: Any]] }
     private var files: [String: CachedFile] = [:]
     private var baselines: [String: Set<String>] = [:]
-    func resetConnection() { baselines.removeAll() }
+    private var connection = -1
+    func read(skim: Bool, folder: URL, known: Set<String>, connection token: Int) throws -> (String, [ReaderHighlight]) {
+        guard token >= connection else { return ("", []) }
+        if token != connection { baselines.removeAll(); connection = token }
+        return try skim ? self.skim(known: known) : calibre(folder: folder, known: known)
+    }
     static let skimBundle = "net.sourceforge.skim-app.skim"
     static func isCalibre(bundle: String, name: String) -> Bool {
         bundle.lowercased().contains("calibre") || ["ebook-viewer", "e-book viewer", "ebook viewer"].contains(name.lowercased())
@@ -159,14 +164,13 @@ final class ReaderProbe {
     var receive: ((ReaderHighlight, String, String, Bool) -> Bool)?
     var status: ((String) -> Void)?
     var failed: ((Error) -> Void)?
-    private let queue = DispatchQueue(label: "ReadingCapture.Reader", qos: .utility)
     private let probe = ReaderProbe()
     private var timer: Timer?
     private var generation = 0
     private var busy = false
     private var started = Date()
     func start() {
-        stop(); started = Date(); let worker = probe; queue.async { worker.resetConnection() }
+        stop(); started = Date()
         status?("Switch to an allowed Skim or calibre viewer to connect.")
         timer = Timer.scheduledTimer(withTimeInterval: 0.7, repeats: true) { [weak self] _ in Task { @MainActor in self?.poll() } }
         timer?.tolerance = 0.1
@@ -178,20 +182,20 @@ final class ReaderProbe {
         guard skim || ReaderProbe.isCalibre(bundle: bundle, name: name) else { status?("Native highlights support Skim and calibre; use Clipboard mode for other readers."); return }
         busy = true
         let token = generation, keys = known, directory = folder, worker = probe
-        queue.async {
-            let result = Result { try skim ? worker.skim(known: keys) : worker.calibre(folder: directory, known: keys) }
-            Task { @MainActor [weak self] in
-                guard let self, token == self.generation, self.timer != nil else { return }
-                self.busy = false
-                switch result {
-                case .failure(let error): self.failed?(error)
-                case .success(let (book, highlights)):
-                    for annotation in highlights {
-                        let fresh = annotation.modified.map { $0 >= self.started.addingTimeInterval(-1) } ?? !annotation.historicalAtConnection
-                        guard self.receive?(annotation, name, bundle, fresh) == true else { return }
-                    }
-                    self.status?(book.isEmpty ? "Open a book in the reader." : "Connected · " + book)
+        Task { [weak self] in
+            let result: Result<(String, [ReaderHighlight]), Error>
+            do { result = .success(try await worker.read(skim: skim, folder: directory, known: keys, connection: token)) }
+            catch { result = .failure(error) }
+            guard let self, token == self.generation, self.timer != nil else { return }
+            self.busy = false
+            switch result {
+            case .failure(let error): self.failed?(error)
+            case .success(let (book, highlights)):
+                for annotation in highlights {
+                    let fresh = !annotation.historicalAtConnection || (annotation.modified.map { $0 >= self.started.addingTimeInterval(-1) } ?? false)
+                    guard self.receive?(annotation, name, bundle, fresh) == true else { return }
                 }
+                self.status?(book.isEmpty ? "Open a book in the reader." : skim ? "Watching · " + book : "Watching calibre · book titles saved with each highlight")
             }
         }
     }
