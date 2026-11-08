@@ -202,6 +202,7 @@ struct LibraryView: View {
     var window: NSWindow?
     var lockObserver: NSObjectProtocol?
     var commentPanel: CommentPanel?
+    private var commentQueue: [Clipping] = []
     func applicationDidFinishLaunching(_ notification: Notification) {
         if let path = Bundle.main.path(forResource: "AppIcon", ofType: "icns"), let image = NSImage(contentsOfFile: path) { NSApp.applicationIconImage = image }
         model = CaptureModel(); item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -212,9 +213,18 @@ struct LibraryView: View {
     }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { openLibrary(); return true }
     func showComment(_ clip: Clipping) {
-        if commentPanel == nil { commentPanel = CommentPanel() }
-        commentPanel?.contentView = NSHostingView(rootView: QuickCommentView(model: model, clip: clip, close: { [weak self] in self?.commentPanel?.orderOut(nil) }))
+        if commentPanel?.isKeyWindow == true { commentQueue.append(clip); return }
+        presentComment(clip)
+    }
+    private func presentComment(_ clip: Clipping) {
+        if commentPanel == nil { commentPanel = CommentPanel(); commentPanel?.delegate = self }
+        commentPanel?.contentView = NSHostingView(rootView: QuickCommentView(model: model, clip: clip, close: { [weak self] in self?.finishComment() }))
         commentPanel?.orderFrontRegardless()
+    }
+    private func finishComment() {
+        guard model.flush() else { return }
+        commentPanel?.orderOut(nil)
+        if !commentQueue.isEmpty { presentComment(commentQueue.removeFirst()) }
     }
     func refreshMenu() {
         item.button?.title = model.recording ? "● Capture \(model.clips.count)" : "Capture paused"
@@ -234,7 +244,11 @@ struct LibraryView: View {
         }
         NSApp.activate(ignoringOtherApps: true); window?.makeKeyAndOrderFront(nil)
     }
-    func windowShouldClose(_ sender: NSWindow) -> Bool { model.flush() }
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard model.flush() else { return false }
+        if sender === commentPanel, !commentQueue.isEmpty { DispatchQueue.main.async { [weak self] in self?.finishComment() } }
+        return true
+    }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard model.flush(), !model.hasPending else { openLibrary(); return .terminateCancel }
         model.pause(); return .terminateNow

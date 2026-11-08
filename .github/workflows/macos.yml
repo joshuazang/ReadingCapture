@@ -57,9 +57,9 @@ jobs:
 
           Requires macOS 13 or newer. Apple Silicon only. These direct release assets avoid GitHub Actions' nested ZIP download.
 
-          This update adds a Dock icon and reopen handler, automatic per-capture comment saving, and a floating optional comment panel after copying. New captures preserve the active library editor. Native highlight shortcuts are not connected yet.
+          Native highlights from Skim and calibre now enter Reading Capture without Copy. Book titles are recorded automatically. Choose Native highlights, allow the running reader, and Start capture. Skim requires macOS Automation approval; custom calibre profiles can be selected through the settings-folder chooser. Existing highlights import quietly; new ones show the optional comment panel. Reader files are read-only.
 
-          Native Keychain/encryption, incoming-capture/comment recovery, rendered-window reopening, and export compatibility tests passed. Both packages were verified on macOS: ZIP extraction, DMG mounting, code signatures, Apple Silicon-only architecture and executable byte comparisons. SHA256SUMS.txt provides download integrity checks.
+          Native Keychain/encryption, reader metadata decoding, duplicate prevention, per-book attribution, comment recovery, rendered-window reopening and export compatibility tests passed. Skim scripts are compiled against the installed reader dictionary; actual reader interaction and on-device permissions still require device verification. Both packages were verified on macOS: ZIP extraction, DMG mounting, code signatures, Apple Silicon-only architecture and executable byte comparisons. SHA256SUMS.txt provides download integrity checks.
 
           This is an ad-hoc signed development prototype, not Developer ID signed or notarized. macOS may request an explicit per-app approval. Real Skim/calibre interactions and UI flows still need device verification. Do not disable Gatekeeper globally.
           NOTES

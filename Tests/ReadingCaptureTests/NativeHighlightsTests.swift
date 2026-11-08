@@ -44,6 +44,29 @@ final class NativeHighlightsTests: XCTestCase {
         XCTAssertEqual(annotation.text, "Exact\nquote"); XCTAssertEqual(annotation.book, "My PDF"); XCTAssertNotNil(annotation.modified)
         XCTAssertEqual(ReaderProbe.appleString("a\"b\\c"), "\"a\\\"b\\\\c\"")
     }
+    @MainActor func testNewHighlightDoesNotReplaceKeyCommentPanel() async throws {
+        _ = NSApplication.shared
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let model = CaptureModel(store: try Vault(directory: folder, key: SymmetricKey(size: .bits256)))
+        model.record("First", app: "Skim", bundle: "reader")
+        let first = try XCTUnwrap(model.clips.first)
+        model.editComment("Still typing", for: first.id)
+        model.record("Second", app: "calibre", bundle: "viewer")
+        let second = try XCTUnwrap(model.clips.first)
+        let delegate = AppDelegate(); delegate.model = model
+        NSApp.activate(ignoringOtherApps: true)
+        delegate.showComment(first)
+        let panel = try XCTUnwrap(delegate.commentPanel)
+        panel.makeKeyAndOrderFront(nil)
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertTrue(panel.isKeyWindow)
+        let originalContent = panel.contentView
+        delegate.showComment(second)
+        XCTAssertTrue(panel.contentView === originalContent)
+        XCTAssertEqual(model.comment(for: first.id), "Still typing")
+        panel.orderOut(nil)
+    }
     @MainActor func testNativeCaptureDeduplicatesAcrossReopenAndKeepsComment() async throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: folder) }
