@@ -1,7 +1,7 @@
 # Reading Capture — macOS prototype
 
 A separate native app for collecting copied passages from Skim, calibre's viewer,
-or other explicitly chosen reading apps. Requires macOS 13 or newer. It has no
+or other explicitly chosen reading apps. Requires an Apple Silicon Mac running macOS 13 or newer. It has no
 Standard Notes account connection, background network client or telemetry.
 This is the standalone source repository. The app has its own process, Keychain
 item, data directory and release workflow. Installing it does not change either
@@ -11,7 +11,7 @@ editor. Its only connection to IM/Mosaic is the export/import file format.
 
 Download the disk image from [Releases](https://github.com/joshuazang/ReadingCapture/releases).
 Open `ReadingCapture-macOS.dmg`, then drag **Reading Capture** into **Applications**.
-The disk image and direct ZIP include both Apple Silicon and Intel executables;
+Future disk images and direct ZIPs contain only the Apple Silicon executable;
 the release assets avoid the nested ZIP produced by Actions artifact downloads.
 Both packages are extracted/mounted and signature-checked on a Mac before release.
 

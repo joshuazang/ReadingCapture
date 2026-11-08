@@ -10,6 +10,8 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Require native Apple Silicon runner
+        run: test "$(uname -m)" = arm64
       - name: Native encryption and archive tests
         run: CAPTURE_EXPORT_FIXTURE="$RUNNER_TEMP/capture-export.txt" swift test
       - name: Checkout pinned import compatibility fixture (tests only)
@@ -51,9 +53,9 @@ jobs:
           cat > "$RUNNER_TEMP/release-notes.md" <<'NOTES'
           Download ReadingCapture-macOS.dmg, open it, and drag Reading Capture into Applications.
 
-          Requires macOS 13 or newer. Includes Apple Silicon and Intel executables. These direct release assets avoid GitHub Actions' nested ZIP download.
+          Requires macOS 13 or newer. Apple Silicon only. These direct release assets avoid GitHub Actions' nested ZIP download.
 
-          Native Keychain/encryption and export compatibility tests passed. Both packages were verified on macOS: ZIP extraction, DMG mounting, code signatures, CPU architectures and executable byte comparisons. SHA256SUMS.txt provides download integrity checks.
+          Native Keychain/encryption and export compatibility tests passed. Both packages were verified on macOS: ZIP extraction, DMG mounting, code signatures, Apple Silicon-only architecture and executable byte comparisons. SHA256SUMS.txt provides download integrity checks.
 
           This is an ad-hoc signed development prototype, not Developer ID signed or notarized. macOS may request an explicit per-app approval. Real Skim/calibre interactions and UI flows still need device verification. Do not disable Gatekeeper globally.
           NOTES
