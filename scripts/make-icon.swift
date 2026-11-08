@@ -8,6 +8,7 @@ for (name, pixels) in [("icon_16x16",16),("icon_16x16@2x",32),("icon_32x32",32),
     NSGraphicsContext.saveGraphicsState()
     let context = NSGraphicsContext(bitmapImageRep: image)!
     NSGraphicsContext.current = context
+    context.cgContext.clear(CGRect(x: 0, y: 0, width: CGFloat(pixels), height: CGFloat(pixels)))
     context.cgContext.scaleBy(x: CGFloat(pixels)/1024, y: CGFloat(pixels)/1024)
     NSColor(srgbRed: 0.13, green: 0.37, blue: 0.32, alpha: 1).setFill()
     NSBezierPath(roundedRect: NSRect(x: 70, y: 70, width: 884, height: 884), xRadius: 200, yRadius: 200).fill()

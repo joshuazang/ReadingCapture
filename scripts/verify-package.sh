@@ -9,8 +9,8 @@ cleanup() {
 }
 trap cleanup EXIT
 test -s "dist/Reading Capture.app/Contents/Resources/AppIcon.icns"
-[[ "$(/usr/libexec/PlistBuddy -c Print:CFBundleIconFile 'dist/Reading Capture.app/Contents/Info.plist')" == AppIcon ]]
-if /usr/libexec/PlistBuddy -c Print:LSUIElement "dist/Reading Capture.app/Contents/Info.plist" >/dev/null 2>&1; then
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' 'dist/Reading Capture.app/Contents/Info.plist')" == AppIcon ]]
+if /usr/libexec/PlistBuddy -c 'Print :LSUIElement' "dist/Reading Capture.app/Contents/Info.plist" >/dev/null 2>&1; then
   echo "The app must use normal Dock presence, not agent-only mode." >&2
   exit 1
 fi
