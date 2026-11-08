@@ -31,6 +31,14 @@ final class NativeHighlightsTests: XCTestCase {
             XCTAssertTrue(script.compileAndReturnError(&issue), "\(issue ?? [:])")
         }
     }
+    func testNewSkimHighlightIsFetchedBeforeHistoricalBackfill() {
+        let old = (0..<60).map { "old-\($0)" }, path = "/Books/book.pdf"
+        let baseline = Set(old.map { ReaderHighlight.identity(reader: "skim", book: path, id: $0) })
+        let fetch = ReaderProbe.skimIDsToFetch(old + ["new"], path: path, known: [], baseline: baseline)
+        XCTAssertEqual(fetch.first, "new"); XCTAssertEqual(fetch.count, 20)
+        let known = Set(fetch.map { ReaderHighlight.identity(reader: "skim", book: path, id: $0) })
+        XCTAssertFalse(ReaderProbe.skimIDsToFetch(old + ["new"], path: path, known: known, baseline: baseline).contains("new"))
+    }
     func testSkimDescriptorDecodingAndScriptStringSafety() throws {
         let header = NSAppleEventDescriptor.list(), ids = NSAppleEventDescriptor.list()
         ids.insert(NSAppleEventDescriptor(string: "note-1"), at: 1)

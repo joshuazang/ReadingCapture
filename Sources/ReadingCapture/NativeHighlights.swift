@@ -114,11 +114,15 @@ actor ReaderProbe {
         let list = (0..<ids.numberOfItems).compactMap { ids.atIndex($0 + 1)?.stringValue }.filter { !$0.isEmpty && $0.utf8.count <= 4096 }
         return (title, path, list)
     }
+    static func skimIDsToFetch(_ ids: [String], path: String, known: Set<String>, baseline: Set<String>) -> [String] {
+        let missing = ids.map { ($0, ReaderHighlight.identity(reader: "skim", book: path, id: $0)) }.filter { !known.contains($0.1) }
+        return Array((missing.filter { !baseline.contains($0.1) } + missing.filter { baseline.contains($0.1) }).prefix(20).map { $0.0 })
+    }
     func skim(known: Set<String>) throws -> (String, [ReaderHighlight]) {
         guard let (title, path, ids) = try Self.skimHeader(Self.execute(Self.skimHeaderScript)) else { return ("", []) }
         let group = "skim:" + path
         if baselines[group] == nil { baselines[group] = Set(ids.map { ReaderHighlight.identity(reader: "skim", book: path, id: $0) }) }
-        let missing = ids.filter { !known.contains(ReaderHighlight.identity(reader: "skim", book: path, id: $0)) }.prefix(20)
+        let missing = Self.skimIDsToFetch(ids, path: path, known: known, baseline: baselines[group] ?? [])
         if missing.isEmpty { return (title, []) }
         return (title, Self.skimRows(try Self.execute(Self.skimDetailScript(path: path, ids: Array(missing))), bookPath: path, title: title).map { item in var item = item; item.historicalAtConnection = baselines[group]?.contains(item.key) == true; return item })
     }
