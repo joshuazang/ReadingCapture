@@ -1,0 +1,14 @@
+const fs = require('node:fs'), vm = require('node:vm'), assert = require('node:assert/strict'), crypto = require('node:crypto');
+const path = require('node:path'), fixtureRoot = process.argv[3] || '.compat/IM-style-editor';
+const core = fs.readFileSync(path.join(fixtureRoot,'shared/core/note-format.js'),'utf8')+'\n'+fs.readFileSync(path.join(fixtureRoot,'shared/core/message-transfer.js'),'utf8')+';({f:imFormat,t:imTransfer})';
+const {f,t} = vm.runInNewContext(core,{crypto,btoa});
+const raw = fs.readFileSync(process.argv[2],'utf8'), payload = t.read(raw);
+assert.equal(payload.ok,true); assert.equal(payload.messages.length,1);
+const m = payload.messages[0];
+assert.equal(m.text,'  Exact quote\r\n@@IM:BUBBLE\n中文 🙂\n\nComment:\nOptional comment\nSecond line');
+assert.equal(m.readingCapture.book,'Book');assert.equal(m.readingCapture.sourceApp,'Skim');
+const merged=t.merge([],payload);assert.equal(t.merge(merged.messages,payload).added.length,0);
+const parsed=f.inspect(f.portable(merged.messages,{},'Unsent draft'));
+assert.equal(parsed.messages[0].text,m.text);assert.equal(parsed.draft,'Unsent draft');
+assert.equal(parsed.messages[0].readingCapture.book,'Book');
+console.log('PASS actual Swift export → shared IM/Mosaic importer → format-3 round trip, metadata and repeat-import deduplication');

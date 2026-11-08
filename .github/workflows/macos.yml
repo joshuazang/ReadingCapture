@@ -1,0 +1,30 @@
+name: Reading Capture macOS
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-app:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Native encryption and archive tests
+        run: CAPTURE_EXPORT_FIXTURE="$RUNNER_TEMP/capture-export.txt" swift test
+      - name: Checkout pinned import compatibility fixture (tests only)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: joshuazang/IM-style-editor
+          ref: aaeaddd97a82b9361fcc76e4472fe9b207b70bcb
+          path: .compat/IM-style-editor
+          sparse-checkout: shared/core
+          persist-credentials: false
+      - name: Test actual export with both editors' shared importer
+        run: node scripts/check-interchange.cjs "$RUNNER_TEMP/capture-export.txt"
+      - name: Build standalone app
+        run: bash scripts/build-app.sh
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ReadingCapture-macOS
+          path: dist/ReadingCapture-macOS.zip
