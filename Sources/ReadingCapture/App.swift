@@ -4,8 +4,8 @@ import UniformTypeIdentifiers
 
 @MainActor final class CaptureModel: ObservableObject {
     @Published var clips: [Clipping] = []
-    @Published var selected: String?
-    @Published var comment = ""
+    @Published private(set) var selected: String?
+    @Published private(set) var commentDrafts: [String: String] = [:]
     @Published var book = ""
     @Published var recording = false
     @Published var error: String?
@@ -14,19 +14,36 @@ import UniformTypeIdentifiers
     private var vault: Vault?
     private var pending: Clipping?
     var changed: (() -> Void)?
-    init() {
-        do { let store = try Vault.open(); clips = try store.load(); vault = store }
+    var captured: ((Clipping) -> Void)?
+    init(store: Vault? = nil) {
+        do { let opened = try store ?? Vault.open(); clips = try opened.load(); vault = opened }
         catch { self.error = "Library could not be opened. Existing files are untouched. \(error.localizedDescription)" }
         monitor.receive = { [weak self] text, app in self?.capture(text, app: app) }
     }
     var current: Clipping? { clips.first { $0.id == selected } }
-    @discardableResult func flush() -> Bool {
-        guard var clip = current, clip.comment != comment else { return true }
-        clip.comment = comment
-        do { guard let vault else { return false }; try vault.save(clip); if let i = clips.firstIndex(where: { $0.id == clip.id }) { clips[i] = clip }; return true }
-        catch { self.error = "Comment is still in this window. Saving failed: \(error.localizedDescription)"; return false }
+    func comment(for id: String) -> String { commentDrafts[id] ?? clips.first(where: { $0.id == id })?.comment ?? "" }
+    func editComment(_ value: String, for id: String) {
+        guard clips.contains(where: { $0.id == id }) else { return }
+        commentDrafts[id] = value
+        _ = saveComment(id)
     }
-    func select(_ id: String?) { guard flush() else { return }; selected = id; comment = current?.comment ?? "" }
+    @discardableResult func saveComment(_ id: String) -> Bool {
+        guard let value = commentDrafts[id] else { return true }
+        guard let index = clips.firstIndex(where: { $0.id == id }), let vault else { return false }
+        var clip = clips[index]; clip.comment = value
+        do {
+            try vault.save(clip); clips[index] = clip; commentDrafts.removeValue(forKey: id)
+            if error?.hasPrefix("Comment is still") == true { error = nil }; return true
+        } catch { self.error = "Comment is still in memory. Saving failed: \(error.localizedDescription)"; return false }
+    }
+    @discardableResult func flush() -> Bool {
+        for id in Array(commentDrafts.keys) { if !saveComment(id) { return false } }
+        return true
+    }
+    func select(_ id: String?) {
+        guard let id, clips.contains(where: { $0.id == id }), flush() else { return }
+        selected = id
+    }
     func toggle() {
         if recording { pause(); return }
         guard vault != nil, pending == nil else { error = "Resolve the library or pending-save error before starting capture."; return }
@@ -42,13 +59,16 @@ import UniformTypeIdentifiers
     }
     func allowRunning(_ app: NSRunningApplication) { guard let id = app.bundleIdentifier else { return }; allowed[id] = app.localizedName ?? id; UserDefaults.standard.set(allowed, forKey: "readingApps"); monitor.allowed = Set(allowed.keys) }
     func removeReader(_ id: String) { allowed.removeValue(forKey: id); UserDefaults.standard.set(allowed, forKey: "readingApps"); monitor.allowed = Set(allowed.keys); if allowed.isEmpty { pause() } }
-    private func capture(_ text: String, app: NSRunningApplication) {
-        do { let clip = try Clipping.make(quote: text, book: book, app: app.localizedName ?? "Reader", bundle: app.bundleIdentifier ?? ""); pending = clip; retry() }
+    private func capture(_ text: String, app: NSRunningApplication) { record(text, app: app.localizedName ?? "Reader", bundle: app.bundleIdentifier ?? "") }
+    func record(_ text: String, app: String, bundle: String) {
+        guard pending == nil else { pause(); return }
+        do { let clip = try Clipping.make(quote: text, book: book, app: app, bundle: bundle); pending = clip; retry() }
         catch { pause(); self.error = error.localizedDescription }
     }
     func retry() {
         guard let clip = pending, let vault else { return }
-        do { try vault.save(clip); clips.insert(clip, at: 0); pending = nil; error = nil; if selected == nil { selected = clip.id; comment = clip.comment }; changed?() }
+        guard flush() else { pause(); return }
+        do { try vault.save(clip); clips.insert(clip, at: 0); pending = nil; error = nil; if selected == nil { selected = clip.id }; changed?(); captured?(clip) }
         catch { pause(); self.error = "Capture paused. The copied text is retained in memory; keep this app open and retry. \(error.localizedDescription)" }
     }
     var hasPending: Bool { pending != nil }
@@ -108,13 +128,19 @@ struct LibraryView: View {
             }
             if model.hasPending { ScrollView { Text(model.pendingQuote).textSelection(.enabled) }.frame(maxHeight: 100); Button("Discard pending capture…") { model.discardPending() } }
             HSplitView {
-                List(selection: Binding(get: { model.selected }, set: { model.select($0) })) {
-                    ForEach(model.clips) { clip in
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text(clip.quote).lineLimit(3)
-                            Text(clip.book.isEmpty ? clip.sourceApp : clip.book).font(.caption).foregroundStyle(.secondary)
-                        }.padding(.vertical, 4).tag(clip.id)
-                    }
+                ScrollView {
+                    LazyVStack(spacing: 6) {
+                        ForEach(model.clips) { clip in
+                            Button { model.select(clip.id) } label: {
+                                VStack(alignment: .leading, spacing: 5) {
+                                    Text(clip.quote).lineLimit(3)
+                                    Text(clip.book.isEmpty ? clip.sourceApp : clip.book).font(.caption).foregroundStyle(.secondary)
+                                }.frame(maxWidth: .infinity, alignment: .leading).padding(10)
+                                  .background(model.selected == clip.id ? Color.accentColor.opacity(0.12) : Color.clear)
+                                  .clipShape(RoundedRectangle(cornerRadius: 8))
+                            }.buttonStyle(.plain)
+                        }
+                    }.padding(4)
                 }.frame(minWidth: 220, idealWidth: 280)
                 VStack(alignment: .leading, spacing: 12) {
                     if let clip = model.current {
@@ -122,8 +148,8 @@ struct LibraryView: View {
                         Text(clip.capturedAt).font(.caption).foregroundStyle(.secondary)
                         ScrollView { Text(clip.quote).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled) }.frame(minHeight: 100)
                         Text("Comment (optional)").font(.headline)
-                        TextEditor(text: $model.comment).frame(minHeight: 100)
-                        HStack { Text("Saved when you switch captures or close this window.").font(.caption).foregroundStyle(.secondary); Spacer(); Button("Save comment") { _ = model.flush() }.keyboardShortcut(.return, modifiers: .command) }
+                        TextEditor(text: Binding(get: { model.comment(for: clip.id) }, set: { model.editComment($0, for: clip.id) })).id(clip.id).frame(minHeight: 100)
+                        HStack { Text("Comments save automatically as you type.").font(.caption).foregroundStyle(.secondary); Spacer(); Button("Save comment") { _ = model.flush() }.keyboardShortcut(.return, modifiers: .command) }
                     } else { Text("Select a capture. Copying in a chosen reader saves a quote without opening this window.").foregroundStyle(.secondary) }
                 }.padding(12).frame(minWidth: 350)
             }
@@ -136,11 +162,20 @@ struct LibraryView: View {
     var item: NSStatusItem!
     var window: NSWindow?
     var lockObserver: NSObjectProtocol?
+    var commentPanel: CommentPanel?
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if let path = Bundle.main.path(forResource: "AppIcon", ofType: "icns"), let image = NSImage(contentsOfFile: path) { NSApp.applicationIconImage = image }
         model = CaptureModel(); item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         model.changed = { [weak self] in self?.refreshMenu() }; refreshMenu()
         lockObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.sessionDidResignActiveNotification, object: nil, queue: .main) { [weak self] _ in Task { @MainActor in self?.model.pause() } }
+        model.captured = { [weak self] clip in self?.showComment(clip) }
         openLibrary()
+    }
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { openLibrary(); return true }
+    func showComment(_ clip: Clipping) {
+        if commentPanel == nil { commentPanel = CommentPanel() }
+        commentPanel?.contentView = NSHostingView(rootView: QuickCommentView(model: model, clip: clip, close: { [weak self] in self?.commentPanel?.orderOut(nil) }))
+        commentPanel?.orderFrontRegardless()
     }
     func refreshMenu() {
         item.button?.title = model.recording ? "● Capture \(model.clips.count)" : "Capture paused"
@@ -170,7 +205,35 @@ struct LibraryView: View {
 @main struct ReadingCaptureApplication {
     @MainActor static func main() {
         let app = NSApplication.shared, delegate = AppDelegate()
-        app.setActivationPolicy(.accessory); app.delegate = delegate
+        let menu = NSMenu(), appItem = NSMenuItem(), appMenu = NSMenu()
+        menu.addItem(appItem); appItem.submenu = appMenu
+        appMenu.addItem(withTitle: "Quit Reading Capture", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        let editItem = NSMenuItem(), editMenu = NSMenu(title: "Edit"); menu.addItem(editItem); editItem.submenu = editMenu
+        for (title, action, key) in [("Undo", Selector(("undo:")), "z"), ("Cut", #selector(NSText.cut(_:)), "x"), ("Copy", #selector(NSText.copy(_:)), "c"), ("Paste", #selector(NSText.paste(_:)), "v"), ("Select All", #selector(NSText.selectAll(_:)), "a")] { editMenu.addItem(withTitle: title, action: action, keyEquivalent: key) }
+        app.mainMenu = menu
+        app.setActivationPolicy(.regular); app.delegate = delegate
         withExtendedLifetime(delegate) { app.run() }
+    }
+}
+
+final class CommentPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    init() {
+        super.init(contentRect: NSRect(x: 0, y: 0, width: 390, height: 250), styleMask: [.titled, .closable, .nonactivatingPanel], backing: .buffered, defer: false)
+        title = "Comment on capture"; level = .floating; hidesOnDeactivate = false
+        isReleasedWhenClosed = false; collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]; center()
+    }
+}
+struct QuickCommentView: View {
+    @ObservedObject var model: CaptureModel
+    let clip: Clipping
+    let close: () -> Void
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(clip.quote).lineLimit(3).foregroundStyle(.secondary)
+            TextEditor(text: Binding(get: { model.comment(for: clip.id) }, set: { model.editComment($0, for: clip.id) })).id(clip.id).frame(minHeight: 80)
+            if model.commentDrafts[clip.id] != nil { Text("Comment is not saved yet. Keep this window open and retry.").foregroundStyle(.red) }
+            HStack { Text("Optional · saves automatically").font(.caption).foregroundStyle(.secondary); Spacer(); Button("Done") { if model.saveComment(clip.id) { close() } }.keyboardShortcut(.return, modifiers: .command) }
+        }.padding(12).frame(width: 366, height: 226)
     }
 }

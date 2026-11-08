@@ -26,10 +26,12 @@ do not disable Gatekeeper globally.
 2. Optionally enter a book/PDF label, then click **Start capture**. Starting
    capture ignores the old clipboard. Copying nonempty text while a chosen
    reader is frontmost immediately saves one quote. No comment is required.
-3. Open the library from the menu bar to add a comment. **Save comment** or
-   Cmd+Enter saves it. Switching captures, closing the window and normal Quit
-   also save comments; failed saves block those transitions. Force Quit/crash
-   can lose a comment that has not yet been saved.
+3. A small floating comment panel appears after each capture without taking
+   focus from the reader. Click it to type an optional comment; each edit saves
+   to that capture’s encrypted file. Cmd+Enter closes the panel after saving.
+   You can also edit comments in the library. Failed writes retain the draft
+   in memory and block normal Quit; Force Quit/crash can lose unconfirmed text.
+   The app has a Dock icon; clicking it reopens the library.
 4. **Export → IM / Mosaic** writes a plain-text message export. Open that file,
    copy its complete contents, and use **Import from clipboard** in either
    editor. One capture becomes one bubble/card. Comments follow the quote;
@@ -94,3 +96,24 @@ editor does not silently change Reading Capture. To test locally, run
 `node scripts/check-interchange.cjs /path/to/capture-export.txt /path/to/IM-style-editor`.
 The original prototype and native verification history are retained in
 [the superseded draft](https://github.com/joshuazang/IM-style-editor/pull/1).
+
+## Native reader highlights
+
+This build captures copied text. Skim’s Control-Command-H and calibre’s H do not
+necessarily change the clipboard, so native highlights do not yet trigger it.
+A reader-aware integration is required. Skim exposes note IDs, types, text and
+pages through its scripting dictionary (Automation consent would be needed).
+Calibre saves highlights through its annotation worker into its viewer annotation
+folder and optionally the ebook/library; that format and update timing must be
+handled explicitly. No global H-key interception or automatic synthetic Copy is
+implemented in this build.
+
+Reference interfaces inspected:
+- [Skim scripting dictionary mirror](https://github.com/scris/skim-pdf/blob/master/Skim.sdef)
+- [Calibre annotation storage](https://github.com/kovidgoyal/calibre/blob/master/src/calibre/gui2/viewer/annotations.py)
+
+A bridge must baseline existing annotations, identify new ones by stable reader
+IDs, retry partially written annotation files, and preserve comment drafts when
+another highlight arrives. It should be opt-in and request only the required
+reader/file access. These are integration requirements, not a claim that native
+highlight capture is already available.

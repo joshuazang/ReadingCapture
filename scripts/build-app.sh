@@ -4,7 +4,7 @@ cd "$(dirname "$0")/.."
 swift build -c release --arch arm64
 task_arm_bin="$(swift build -c release --arch arm64 --show-bin-path)/ReadingCapture"
 task_app_path="$PWD/dist/Reading Capture.app"
-mkdir -p "$task_app_path/Contents/MacOS"
+mkdir -p "$task_app_path/Contents/MacOS" "$task_app_path/Contents/Resources"
 cp "$task_arm_bin" "$task_app_path/Contents/MacOS/ReadingCapture"
 cat > "$task_app_path/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -14,13 +14,17 @@ cat > "$task_app_path/Contents/Info.plist" <<'PLIST'
 <key>CFBundleName</key><string>Reading Capture</string>
 <key>CFBundleExecutable</key><string>ReadingCapture</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>0.1.2</string>
-<key>CFBundleVersion</key><string>3</string>
+<key>CFBundleShortVersionString</key><string>0.2.0</string>
+<key>CFBundleVersion</key><string>4</string>
 <key>LSMinimumSystemVersion</key><string>13.0</string>
-<key>LSUIElement</key><true/>
+<key>CFBundleIconFile</key><string>AppIcon</string>
 <key>NSHighResolutionCapable</key><true/>
 </dict></plist>
 PLIST
+task_icon_dir="$(mktemp -d)/AppIcon.iconset"
+swift scripts/make-icon.swift "$task_icon_dir"
+iconutil -c icns "$task_icon_dir" -o "$task_app_path/Contents/Resources/AppIcon.icns"
+rm -rf "$(dirname "$task_icon_dir")"
 codesign --force --sign - --identifier com.joshuazang.reading-capture "$task_app_path"
 [[ "$(lipo -archs "$task_app_path/Contents/MacOS/ReadingCapture")" == arm64 ]]
 ditto -c -k --sequesterRsrc --keepParent "$task_app_path" "$PWD/dist/ReadingCapture-macOS.zip"

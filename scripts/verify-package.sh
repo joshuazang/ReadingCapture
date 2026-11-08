@@ -8,6 +8,9 @@ cleanup() {
   rm -rf "$task_verify_dir"
 }
 trap cleanup EXIT
+test -s "dist/Reading Capture.app/Contents/Resources/AppIcon.icns"
+iconutil -c iconset "dist/Reading Capture.app/Contents/Resources/AppIcon.icns" -o "$task_verify_dir/decoded.iconset"
+test -s "$task_verify_dir/decoded.iconset/icon_512x512@2x.png"
 (cd dist && shasum -a 256 -c SHA256SUMS.txt)
 unzip -t dist/ReadingCapture-macOS.zip
 ditto -x -k dist/ReadingCapture-macOS.zip "$task_verify_dir/unzipped"
