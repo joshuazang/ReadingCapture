@@ -12,8 +12,10 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - name: Require native Apple Silicon runner
         run: test "$(uname -m)" = arm64
+      - name: Install Skim scripting dictionary for compile checks
+        run: brew install --cask skim
       - name: Native encryption and archive tests
-        run: CAPTURE_EXPORT_FIXTURE="$RUNNER_TEMP/capture-export.txt" swift test
+        run: CAPTURE_EXPORT_FIXTURE="$RUNNER_TEMP/capture-export.txt" bash scripts/ci-command.sh swift test
       - name: Checkout pinned import compatibility fixture (tests only)
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:

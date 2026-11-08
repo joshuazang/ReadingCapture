@@ -14,10 +14,11 @@ cat > "$task_app_path/Contents/Info.plist" <<'PLIST'
 <key>CFBundleName</key><string>Reading Capture</string>
 <key>CFBundleExecutable</key><string>ReadingCapture</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>0.2.0</string>
-<key>CFBundleVersion</key><string>4</string>
+<key>CFBundleShortVersionString</key><string>0.3.0</string>
+<key>CFBundleVersion</key><string>5</string>
 <key>LSMinimumSystemVersion</key><string>13.0</string>
 <key>CFBundleIconFile</key><string>AppIcon</string>
+<key>NSAppleEventsUsageDescription</key><string>Read Skim’s book name and highlight annotations into your local capture library. Reading Capture does not change your PDFs.</string>
 <key>NSHighResolutionCapable</key><true/>
 </dict></plist>
 PLIST
@@ -25,7 +26,7 @@ task_icon_dir="$(mktemp -d)/AppIcon.iconset"
 swift scripts/make-icon.swift "$task_icon_dir"
 iconutil -c icns "$task_icon_dir" -o "$task_app_path/Contents/Resources/AppIcon.icns"
 rm -rf "$(dirname "$task_icon_dir")"
-codesign --force --sign - --identifier com.joshuazang.reading-capture "$task_app_path"
+codesign --force --sign - --entitlements scripts/ReadingCapture.entitlements --identifier com.joshuazang.reading-capture "$task_app_path"
 [[ "$(lipo -archs "$task_app_path/Contents/MacOS/ReadingCapture")" == arm64 ]]
 ditto -c -k --sequesterRsrc --keepParent "$task_app_path" "$PWD/dist/ReadingCapture-macOS.zip"
 task_image_stage="$(mktemp -d)"

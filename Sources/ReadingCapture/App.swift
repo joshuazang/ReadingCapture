@@ -8,9 +8,14 @@ import UniformTypeIdentifiers
     @Published private(set) var commentDrafts: [String: String] = [:]
     @Published var book = ""
     @Published var recording = false
+    @Published var nativeHighlights = true
+    @Published var readerStatus = ""
     @Published var error: String?
     @Published var allowed: [String: String] = UserDefaults.standard.dictionary(forKey: "readingApps") as? [String: String] ?? [:]
     let monitor = ClipboardMonitor()
+    let nativeMonitor = NativeHighlightMonitor()
+    private var annotationKeys: Set<String> = []
+    private var pendingNotify = true
     private var vault: Vault?
     private var pending: Clipping?
     var changed: (() -> Void)?
@@ -18,7 +23,16 @@ import UniformTypeIdentifiers
     init(store: Vault? = nil) {
         do { let opened = try store ?? Vault.open(); clips = try opened.load(); vault = opened }
         catch { self.error = "Library could not be opened. Existing files are untouched. \(error.localizedDescription)" }
+        annotationKeys = Set(clips.compactMap(\.annotationKey))
+        nativeMonitor.known = annotationKeys
+        if let path = UserDefaults.standard.string(forKey: "calibreSettingsFolder") { nativeMonitor.folder = URL(fileURLWithPath: path) }
         monitor.receive = { [weak self] text, app in self?.capture(text, app: app) }
+        nativeMonitor.status = { [weak self] text in if self?.readerStatus != text { self?.readerStatus = text } }
+        nativeMonitor.failed = { [weak self] issue in
+            self?.readerStatus = issue.localizedDescription
+            if (issue as NSError).code == -1743 { self?.pause(); self?.error = issue.localizedDescription }
+        }
+        nativeMonitor.receive = { [weak self] annotation, app, bundle, notify in self?.recordAnnotation(annotation, app: app, bundle: bundle, notify: notify) ?? false }
     }
     var current: Clipping? { clips.first { $0.id == selected } }
     func comment(for id: String) -> String { commentDrafts[id] ?? clips.first(where: { $0.id == id })?.comment ?? "" }
@@ -48,27 +62,47 @@ import UniformTypeIdentifiers
         if recording { pause(); return }
         guard vault != nil, pending == nil else { error = "Resolve the library or pending-save error before starting capture."; return }
         guard !allowed.isEmpty else { error = "Choose your Skim or calibre viewer application first."; return }
-        monitor.allowed = Set(allowed.keys); monitor.start(); recording = true; changed?()
+        monitor.allowed = Set(allowed.keys); nativeMonitor.allowed = Set(allowed.keys)
+        recording = true
+        if nativeHighlights { nativeMonitor.start() } else { monitor.start() }
+        changed?()
     }
-    func pause() { monitor.stop(); recording = false; changed?() }
+    func pause() { monitor.stop(); nativeMonitor.stop(); recording = false; changed?() }
     func addReader() {
         let panel = NSOpenPanel(); panel.allowedContentTypes = [.application]; panel.directoryURL = URL(fileURLWithPath: "/Applications"); panel.message = "Choose Skim or the calibre viewer application. Only chosen apps can supply captures."
         guard panel.runModal() == .OK, let url = panel.url, let bundle = Bundle(url: url), let id = bundle.bundleIdentifier else { return }
         allowed[id] = bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? url.deletingPathExtension().lastPathComponent
-        UserDefaults.standard.set(allowed, forKey: "readingApps"); monitor.allowed = Set(allowed.keys)
+        UserDefaults.standard.set(allowed, forKey: "readingApps"); monitor.allowed = Set(allowed.keys); nativeMonitor.allowed = Set(allowed.keys)
     }
-    func allowRunning(_ app: NSRunningApplication) { guard let id = app.bundleIdentifier else { return }; allowed[id] = app.localizedName ?? id; UserDefaults.standard.set(allowed, forKey: "readingApps"); monitor.allowed = Set(allowed.keys) }
-    func removeReader(_ id: String) { allowed.removeValue(forKey: id); UserDefaults.standard.set(allowed, forKey: "readingApps"); monitor.allowed = Set(allowed.keys); if allowed.isEmpty { pause() } }
+    func allowRunning(_ app: NSRunningApplication) { guard let id = app.bundleIdentifier else { return }; allowed[id] = app.localizedName ?? id; UserDefaults.standard.set(allowed, forKey: "readingApps"); monitor.allowed = Set(allowed.keys); nativeMonitor.allowed = Set(allowed.keys) }
+    func removeReader(_ id: String) { allowed.removeValue(forKey: id); UserDefaults.standard.set(allowed, forKey: "readingApps"); monitor.allowed = Set(allowed.keys); nativeMonitor.allowed = Set(allowed.keys); if allowed.isEmpty { pause() } }
     private func capture(_ text: String, app: NSRunningApplication) { record(text, app: app.localizedName ?? "Reader", bundle: app.bundleIdentifier ?? "") }
     func record(_ text: String, app: String, bundle: String) {
         guard pending == nil else { pause(); return }
-        do { let clip = try Clipping.make(quote: text, book: book, app: app, bundle: bundle); pending = clip; retry() }
+        do { let clip = try Clipping.make(quote: text, book: book, app: app, bundle: bundle); pending = clip; pendingNotify = true; retry() }
         catch { pause(); self.error = error.localizedDescription }
+    }
+    func recordAnnotation(_ annotation: ReaderHighlight, app: String, bundle: String, notify: Bool) -> Bool {
+        if annotationKeys.contains(annotation.key) { return true }
+        guard pending == nil else { return false }
+        do {
+            var clip = try Clipping.make(quote: annotation.text, book: annotation.book, app: app, bundle: bundle)
+            clip.annotationKey = annotation.key; pending = clip; pendingNotify = notify; retry()
+            return annotationKeys.contains(annotation.key)
+        } catch { pause(); error = error.localizedDescription; return false }
+    }
+    func chooseCalibreFolder() {
+        let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false
+        panel.directoryURL = nativeMonitor.folder
+        panel.message = "Choose calibre’s settings folder containing viewer-webengine.json. Reading Capture only reads metadata and viewer/annots files."
+        guard panel.runModal() == .OK, let folder = panel.url else { return }
+        guard FileManager.default.fileExists(atPath: folder.appendingPathComponent("viewer-webengine.json").path) else { error = "That folder does not contain viewer-webengine.json."; return }
+        nativeMonitor.folder = folder; UserDefaults.standard.set(folder.path, forKey: "calibreSettingsFolder")
     }
     func retry() {
         guard let clip = pending, let vault else { return }
         guard flush() else { pause(); return }
-        do { try vault.save(clip); clips.insert(clip, at: 0); pending = nil; error = nil; if selected == nil { selected = clip.id }; changed?(); captured?(clip) }
+        do { try vault.save(clip); clips.insert(clip, at: 0); pending = nil; error = nil; if selected == nil { selected = clip.id }; if let key = clip.annotationKey { annotationKeys.insert(key); nativeMonitor.known.insert(key) }; changed?(); if pendingNotify { captured?(clip) } }
         catch { pause(); self.error = "Capture paused. The copied text is retained in memory; keep this app open and retry. \(error.localizedDescription)" }
     }
     var hasPending: Bool { pending != nil }
@@ -96,7 +130,7 @@ import UniformTypeIdentifiers
                     if existing == clip { continue }
                     clip.id = try Clipping.make(quote: clip.quote, book: clip.book, app: clip.sourceApp, bundle: clip.sourceBundle).id
                 }
-                try vault.save(clip); clips.append(clip); known[clip.id] = clip; imported += 1
+                try vault.save(clip); clips.append(clip); if let key = clip.annotationKey { annotationKeys.insert(key); nativeMonitor.known.insert(key) }; known[clip.id] = clip; imported += 1
             }
             clips.sort { $0.capturedAt > $1.capturedAt }; changed?()
         } catch { self.error = "Import stopped after \(imported) captures. Existing captures and successful imports are kept. \(error.localizedDescription)" }
@@ -114,13 +148,18 @@ struct LibraryView: View {
                 Menu("Export") { Button("IM / Mosaic — plain text") { model.export(false) }; Button("Backup JSON — plain text") { model.export(true) } }
                 Button("Import backup") { model.importArchive() }
             }
-            HStack { Text("Book / PDF"); TextField("Optional label for new captures", text: $model.book) }
+            HStack {
+                Picker("Capture", selection: $model.nativeHighlights) { Text("Native highlights").tag(true); Text("Clipboard").tag(false) }.pickerStyle(.segmented).frame(maxWidth: 330).disabled(model.recording)
+                if model.nativeHighlights { Button("calibre settings folder…") { model.chooseCalibreFolder() }.disabled(model.recording) }
+                else { TextField("Optional book label for clipboard captures", text: $model.book) }
+            }
+            if model.nativeHighlights { Text(model.readerStatus.isEmpty ? "Book titles are recorded automatically. Start capture, then highlight in your reader." : model.readerStatus).font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading) }
             HStack {
                 Menu("Reading apps (\(model.allowed.count))") {
                     ForEach(model.allowed.keys.sorted(), id: \.self) { id in Button("Remove \(model.allowed[id] ?? id)") { model.removeReader(id) } }
                     Divider(); ForEach(NSWorkspace.shared.runningApplications.filter { $0.activationPolicy == .regular && $0.bundleIdentifier != nil }, id: \.processIdentifier) { app in Button("Allow \(app.localizedName ?? "Reader")") { model.allowRunning(app) } }; Divider(); Button("Add reading app…") { model.addReader() }
                 }
-                Text("Copy while a chosen reader is active. Capture starts paused.").font(.caption).foregroundStyle(.secondary)
+                Text("Highlight or copy in your chosen mode. Capture starts paused.").font(.caption).foregroundStyle(.secondary)
                 Spacer()
             }
             if let error = model.error {

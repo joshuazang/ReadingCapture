@@ -15,6 +15,7 @@ struct Clipping: Codable, Identifiable, Equatable {
     var book: String
     var sourceApp: String
     var sourceBundle: String
+    var annotationKey: String? = nil
 
     static func make(quote: String, book: String, app: String, bundle: String) throws -> Clipping {
         var bytes = [UInt8](repeating: 0, count: 16)
@@ -23,6 +24,7 @@ struct Clipping: Codable, Identifiable, Equatable {
         return Clipping(id: id, capturedAt: ISO8601DateFormatter().string(from: Date()), quote: quote, comment: "", book: book, sourceApp: app, sourceBundle: bundle)
     }
     func validate() throws {
+        if let annotationKey, annotationKey.range(of: "^[a-f0-9]{64}$", options: .regularExpression) == nil { throw CaptureError.invalid("Invalid annotation identity.") }
         guard id.range(of: "^[A-Za-z0-9_-]{21}[AQgw]$", options: .regularExpression) != nil,
               ISO8601DateFormatter().date(from: capturedAt) != nil,
               !quote.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
