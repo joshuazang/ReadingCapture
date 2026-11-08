@@ -37,7 +37,8 @@ quietly on connection; new highlights show the comment panel. Calibre reads
 annotations for books present in its recent-book mapping (up to 25); each
 highlight keeps the title associated with its own file, not a guessed window
 name. This can import existing highlights from several recent books. Skim reads
-the front document, fetching new text in batches of at most 20 notes per poll.
+the front document. Both adapters save at most 20 captures per poll and prioritize
+new highlights over historical backfill. Skim fetches only uncaptured note text.
 A large existing highlight collection can take several polls to finish importing.
 
 The adapters poll approximately every 0.7 seconds while enabled and the reader

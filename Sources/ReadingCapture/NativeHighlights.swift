@@ -14,7 +14,7 @@ struct ReaderHighlight: Equatable, Sendable {
 
 /// Actor-isolated reader state. This never writes a reader's files.
 actor ReaderProbe {
-    private struct CachedFile { let date: Date?; let size: Int; let rows: [[String: Any]] }
+    private struct CachedFile { let date: Date?; let size: Int; let title: String; let items: [ReaderHighlight] }
     private var files: [String: CachedFile] = [:]
     private var baselines: [String: Set<String>] = [:]
     private var connection = -1
@@ -55,15 +55,14 @@ actor ReaderProbe {
             guard FileManager.default.fileExists(atPath: url.path) else { continue }
             let cacheKey = url.path; activeURLs.insert(cacheKey)
             let info = try url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
-            let rows: [[String: Any]]
-            if let old = files[cacheKey], old.date == info.contentModificationDate, old.size == info.fileSize { rows = old.rows }
+            let items: [ReaderHighlight]
+            if let old = files[cacheKey], old.date == info.contentModificationDate, old.size == info.fileSize, old.title == title { items = old.items }
             else {
                 guard let parsed = try Self.readJSON(url) as? [[String: Any]], parsed.count <= 20_000 else { throw CaptureError.invalid("Calibre annotations are not yet readable; waiting for a complete file.") }
-                rows = parsed
-                files[cacheKey] = CachedFile(date: info.contentModificationDate, size: info.fileSize ?? 0, rows: parsed)
+                items = Self.calibreRows(parsed, bookPath: path, title: title, excluding: known)
+                files[cacheKey] = CachedFile(date: info.contentModificationDate, size: info.fileSize ?? 0, title: title, items: items)
             }
             if latestTitle.isEmpty { latestTitle = title }
-            let items = Self.calibreRows(rows, bookPath: path, title: title)
             let group = "calibre:" + path
             if baselines[group] == nil { baselines[group] = Set(items.map(\.key)) }
             highlights += items.filter { !known.contains($0.key) }.map { item in var item = item; item.historicalAtConnection = baselines[group]?.contains(item.key) == true; return item }
@@ -71,12 +70,14 @@ actor ReaderProbe {
         files = files.filter { activeURLs.contains($0.key) }
         return (latestTitle, highlights)
     }
-    static func calibreRows(_ rows: [[String: Any]], bookPath: String, title: String) -> [ReaderHighlight] {
+    static func calibreRows(_ rows: [[String: Any]], bookPath: String, title: String, excluding known: Set<String> = []) -> [ReaderHighlight] {
         rows.compactMap { row in
             guard row["type"] as? String == "highlight", row["removed"] as? Bool != true, row["deleted"] as? Bool != true,
                   let id = row["uuid"] as? String, !id.isEmpty, id.utf8.count <= 4096,
                   let text = row["highlighted_text"] as? String, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, text.utf8.count <= 1_000_000 else { return nil }
-            return ReaderHighlight(key: ReaderHighlight.identity(reader: "calibre", book: bookPath, id: id), text: text, book: title, modified: Self.date(row["timestamp"] as? String))
+            let key = ReaderHighlight.identity(reader: "calibre", book: bookPath, id: id)
+            guard !known.contains(key) else { return nil }
+            return ReaderHighlight(key: key, text: text, book: title, modified: Self.date(row["timestamp"] as? String))
         }
     }
     static func appleString(_ value: String) -> String {
@@ -191,9 +192,10 @@ actor ReaderProbe {
             switch result {
             case .failure(let error): self.failed?(error)
             case .success(let (book, highlights)):
-                for annotation in highlights {
-                    let fresh = !annotation.historicalAtConnection || (annotation.modified.map { $0 >= self.started.addingTimeInterval(-1) } ?? false)
-                    guard self.receive?(annotation, name, bundle, fresh) == true else { return }
+                let isFresh: (ReaderHighlight) -> Bool = { !$0.historicalAtConnection || ($0.modified.map { $0 >= self.started.addingTimeInterval(-1) } ?? false) }
+                let prioritized = highlights.filter(isFresh) + highlights.filter { !isFresh($0) }
+                for annotation in prioritized.prefix(20) {
+                    guard self.receive?(annotation, name, bundle, isFresh(annotation)) == true else { return }
                 }
                 self.status?(book.isEmpty ? "Open a book in the reader." : skim ? "Watching · " + book : "Watching calibre · book titles saved with each highlight")
             }
